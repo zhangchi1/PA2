@@ -1,3 +1,4 @@
+package GoBackN;
 import java.util.*;
 import java.io.*;
 
@@ -92,7 +93,9 @@ public class StudentNetworkSimulator extends NetworkSimulator
     private int WindowSize;
     private double RxmtInterval;
     private int LimitSeqNo;
-    
+
+    private Packet[] buffer;
+
     // Add any necessary class variables here.  Remember, you cannot use
     // these variables to send messages error free!  They can only hold
     // state information for A or B.
