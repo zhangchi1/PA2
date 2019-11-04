@@ -5,7 +5,9 @@ public class Packet
     private int acknum;
     private int checksum;
     private String payload;
-    
+    //
+    private int[] sack = new int[5];
+
     public Packet(Packet p)
     {
         seqnum = p.getSeqnum();
@@ -39,7 +41,18 @@ public class Packet
         acknum = ack;
         checksum = check;
         payload = "";
-    }    
+    }
+
+    /**
+     * set the
+     * @param index
+     * @param n
+     * @return
+     */
+    public boolean setSack(int index, int n) {
+        this.sack[index] = n;
+        return true;
+    }
         
 
     public boolean setSeqnum(int n)
@@ -77,6 +90,9 @@ public class Packet
             payload = new String(newPayload);
             return true;
         }
+    }
+    public int[] getSack() {
+        return this.sack;
     }
     
     public int getSeqnum()
