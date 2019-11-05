@@ -102,14 +102,18 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     private int maxBufferSize;
     private int nextSequenceNum;
     private int sequenceBase;
+    private int expectedSequenceNum;
 
 
     /**
      * statistic variables
      */
-    private int TIME;
     private int transmittedPacketNum = 0;
+    private int retransmittedPacketNum = 0;
     private int corruptedPacketNum = 0;
+    private int lostPacketNum = 0;
+    private int successfullyReceivedPacketNum = 0;
+    private int ackNum = 0;
 
     // RTTs
     private int RTTNums = 0;
@@ -204,7 +208,12 @@ public class StudentNetworkSimulator extends NetworkSimulator {
         if (this.nextSequenceNum < bufferSize) {
             // add packet into the buffer: A is ack num
             Packet packet = this.createPacket(this.nextSequenceNum, A, message.getData());
-            this.buffer.add(packet);
+            // within the window size
+            if (this.nextSequenceNum <= this.WindowSize) {
+                this.buffer.set(this.nextSequenceNum, packet);
+            } else{
+                this.buffer.set(this.nextSequenceNum % this.LimitSeqNo, packet);
+            }
             this.sendNextPacketFromA();
             System.out.println("SIDE A: received a message ");
             this.transmittedPacketNum += 1;
@@ -223,6 +232,8 @@ public class StudentNetworkSimulator extends NetworkSimulator {
         double currRTT = this.getTime() - this.startRTT;
         this.totalRTT += currRTT;
         this.RTTNums += 1;
+        // receive packet from B
+        this.successfullyReceivedPacketNum += 1;
 
         if (!this.isCorruptedPacket(packet)) {
             System.out.println("Receiving packet from SIDE B ");
@@ -248,7 +259,20 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // for how the timer is started and stopped. 
     protected void aTimerInterrupt() {
         // start timer for retransmission
-        
+        startTimer(A, this.RxmtInterval);
+
+        for (int i = this.sequenceBase;i<this.nextSequenceNum;i++) {
+
+            if (i>this.WindowSize) {
+                toLayer3(A,this.buffer.get(i%this.LimitSeqNo));
+            } else {
+                toLayer3(A,this.buffer.get(i));
+            }
+            this.retransmittedPacketNum += 1;
+            this.transmittedPacketNum += 1;
+
+        }
+
 
     }
 
@@ -257,6 +281,17 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // initialization (e.g. of member variables you add to control the state
     // of entity A).
     protected void aInit() {
+        this.buffer = new ArrayList<>();
+        // init empty packets
+        for(int i=0;i<this.LimitSeqNo;i++) {
+            this.buffer.add(new Packet(0,0,1,"empty"));
+        }
+
+        this.WindowSize = 8;
+        this.nextSequenceNum = 0;
+        this.sequenceBase = 0;
+        //maximum number of buffers available at your sender (say for 50 messages)
+        this.maxBufferSize = 50;
 
     }
 
@@ -265,7 +300,22 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // arrives at the B-side.  "packet" is the (possibly corrupted) packet
     // sent from the A-side.
     protected void bInput(Packet packet) {
-
+        if (!this.isCorruptedPacket(packet)&&packet.getSeqnum()==this.expectedSequenceNum) {
+            toLayer5(packet.getPayload());
+            this.ackNum += 1;
+            this.expectedSequenceNum += 1;
+        } else{
+            if(this.isCorruptedPacket(packet)) {
+                this.corruptedPacketNum += 1;
+            }
+        }
+        // send ACK to A-side
+        int seqNum = this.expectedSequenceNum;
+        int ackNum = packet.getSeqnum();
+        Packet ackPacket = this.createPacket(seqNum,ackNum,"ack: "+ seqNum);
+        toLayer3(B, ackPacket);
+        // transmit from B to A
+//        this.transmittedPacketNum += 1;
     }
 
     // This routine will be called once, before any of your other B-side 
@@ -273,21 +323,25 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // initialization (e.g. of member variables you add to control the state
     // of entity B).
     protected void bInit() {
+        this.expectedSequenceNum = 0;
 
     }
 
     // Use to print final statistics
     protected void Simulation_done() {
+        this.lostPacketNum = this.transmittedPacketNum-this.successfullyReceivedPacketNum;
         // TO PRINT THE STATISTICS, FILL IN THE DETAILS BY PUTTING VARIBALE NAMES. DO NOT CHANGE THE FORMAT OF PRINTED OUTPUT
         System.out.println("\n\n===============STATISTICS=======================");
-        System.out.println("Number of original packets transmitted by A:" + "<YourVariableHere>");
-        System.out.println("Number of retransmissions by A:" + "<YourVariableHere>");
-        System.out.println("Number of data packets delivered to layer 5 at B:" + "<YourVariableHere>");
-        System.out.println("Number of ACK packets sent by B:" + "<YourVariableHere>");
-        System.out.println("Number of corrupted packets:" + "<YourVariableHere>");
-        System.out.println("Ratio of lost packets:" + "<YourVariableHere>");
-        System.out.println("Ratio of corrupted packets:" + "<YourVariableHere>");
-        System.out.println("Average RTT:" + "<YourVariableHere>");
+        System.out.println("Number of original packets transmitted by A:" + this.transmittedPacketNum);
+        System.out.println("Number of retransmissions by A:" +this.retransmittedPacketNum);
+        System.out.println("Number of data packets delivered to layer 5 at B:" + this.successfullyReceivedPacketNum);
+        System.out.println("Number of ACK packets sent by B:" + this.ackNum);
+        System.out.println("Number of corrupted packets:" + this.corruptedPacketNum);
+        // ratios
+        System.out.println("Ratio of lost packets:" + this.lostPacketNum/this.transmittedPacketNum);
+        System.out.println("Ratio of corrupted packets:" + this.corruptedPacketNum / this.transmittedPacketNum);
+        // averages
+        System.out.println("Average RTT:" + this.totalRTT / this.RTTNums);
         System.out.println("Average communication time:" + "<YourVariableHere>");
         System.out.println("==================================================");
 
