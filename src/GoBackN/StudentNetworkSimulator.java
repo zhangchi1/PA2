@@ -260,6 +260,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     protected void aTimerInterrupt() {
         // start timer for retransmission
         startTimer(A, this.RxmtInterval);
+        this.startRTT = this.getTime();
 
         for (int i = this.sequenceBase;i<this.nextSequenceNum;i++) {
 
