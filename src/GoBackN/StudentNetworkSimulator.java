@@ -1,7 +1,6 @@
 package GoBackN;
 
-import java.util.*;
-import java.io.*;
+import java.util.ArrayList;
 
 public class StudentNetworkSimulator extends NetworkSimulator {
     /*
@@ -122,6 +121,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // communication Time
     private double startCommunicatTime = 0.0;
     private double totalCommuncatTime = 0.0;
+    private int communicatNum = 0;
 
 
     // This is the constructor.  Don't touch!
@@ -209,7 +209,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     protected void aOutput(Message message) {
         int bufferSize = this.sequenceBase + this.WindowSize + this.maxBufferSize;
         if (this.nextSequenceNum < bufferSize) {
-            this.startCommunicatTime = this.getTime();
+            this.startRTT = this.getTime();
             // add packet into the buffer: A is ack num
             Packet packet = this.createPacket(this.nextSequenceNum, A, message.getData());
             // within the window size
@@ -221,6 +221,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
             this.sendNextPacketFromA();
             System.out.println("SIDE A: received a message ");
             this.transmittedPacketNum += 1;
+            this.nextSequenceNum += 1;
         } else {
             System.out.println("SIDE A: window size is full!");
         }
@@ -233,15 +234,20 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // arrives at the A-side.  "packet" is the (possibly corrupted) packet
     // sent from the B-side.
     protected void aInput(Packet packet) {
-        double currRTT = this.getTime() - this.startRTT;
-        this.totalRTT += currRTT;
-        this.RTTNums += 1;
+    	// add to "total communication" time, even if the data packet is retransmitted
+        double currCommuicationTime = this.getTime() - this.startCommunicatTime;
+        this.totalCommuncatTime += currCommuicationTime;
+        this.communicatNum += 1;
         // receive packet from B
-        this.successfullyReceivedPacketNum += 1;
+        //this.successfullyReceivedPacketNum += 1;
 
+        // when packet is NOT corrupted
         if (!this.isCorruptedPacket(packet)) {
+        	//TODO: update successfullyReceivedPacketNum
+        	this.successfullyReceivedPacketNum += 1;
             System.out.println("Receiving packet from SIDE B ");
-            this.totalCommuncatTime = this.getTime() - this.startCommunicatTime;
+            this.totalRTT = this.getTime() - this.startRTT;
+            this.RTTNums += 1;
             // update sequence number
             this.sequenceBase = packet.getAcknum() + 1;
             if (this.sequenceBase == this.nextSequenceNum) {
@@ -265,7 +271,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     protected void aTimerInterrupt() {
         // start timer for retransmission
         startTimer(A, this.RxmtInterval);
-        this.startRTT = this.getTime();
+        this.startCommunicatTime = this.getTime();
 
         for (int i = this.sequenceBase;i<this.nextSequenceNum;i++) {
 
@@ -275,7 +281,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
                 toLayer3(A,this.buffer.get(i));
             }
             this.retransmittedPacketNum += 1;
-            this.transmittedPacketNum += 1;
+            //this.transmittedPacketNum += 1;
 
         }
 
@@ -306,16 +312,21 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     // arrives at the B-side.  "packet" is the (possibly corrupted) packet
     // sent from the A-side.
     protected void bInput(Packet packet) {
+    	// increase delivered packets
+    	this.successfullyReceivedPacketNum += 1;
+    	
         if (!this.isCorruptedPacket(packet)&&packet.getSeqnum()==this.expectedSequenceNum) {
             toLayer5(packet.getPayload());
-            this.ackNum += 1;
+            //this.ackNum += 1;
             this.expectedSequenceNum += 1;
         } else{
             if(this.isCorruptedPacket(packet)) {
-                this.corruptedPacketNum += 1;
+                //this.corruptedPacketNum += 1;
             }
+            this.corruptedPacketNum += 1;
         }
         // send ACK to A-side
+        this.ackNum += 1;
         int seqNum = this.expectedSequenceNum;
         int ackNum = packet.getSeqnum();
         Packet ackPacket = this.createPacket(seqNum,ackNum,"ack: "+ seqNum);
@@ -335,7 +346,8 @@ public class StudentNetworkSimulator extends NetworkSimulator {
 
     // Use to print final statistics
     protected void Simulation_done() {
-        this.lostPacketNum = this.transmittedPacketNum-this.successfullyReceivedPacketNum;
+        this.lostPacketNum = this.transmittedPacketNum+this.retransmittedPacketNum-this.successfullyReceivedPacketNum;
+        double totalPacketNum = this.transmittedPacketNum + this.retransmittedPacketNum+this.ackNum;
         // TO PRINT THE STATISTICS, FILL IN THE DETAILS BY PUTTING VARIBALE NAMES. DO NOT CHANGE THE FORMAT OF PRINTED OUTPUT
         System.out.println("\n\n===============STATISTICS=======================");
         System.out.println("Number of original packets transmitted by A:" + this.transmittedPacketNum);
@@ -343,17 +355,24 @@ public class StudentNetworkSimulator extends NetworkSimulator {
         System.out.println("Number of data packets delivered to layer 5 at B:" + this.successfullyReceivedPacketNum);
         System.out.println("Number of ACK packets sent by B:" + this.ackNum);
         System.out.println("Number of corrupted packets:" + this.corruptedPacketNum);
-        // ratios
-        System.out.println("Ratio of lost packets:" + this.lostPacketNum/this.transmittedPacketNum);
-        System.out.println("Ratio of corrupted packets:" + this.corruptedPacketNum / this.transmittedPacketNum);
-        // averages
+       
+        // ****** ratios       
+        double lostRatio = (double)(this.retransmittedPacketNum - this.corruptedPacketNum) / (double)(this.transmittedPacketNum+this.retransmittedPacketNum+this.ackNum);
+        double corrupRatio = (double)(this.corruptedPacketNum) / (totalPacketNum-(this.retransmittedPacketNum-this.corruptedPacketNum));
+        System.out.println("Ratio of lost packets:" + lostRatio);
+        System.out.println("Ratio of corrupted packets:"+corrupRatio);
+        // ****** averages
+        // Average time to send a packet and receive its ACK for a packet that has *NOT* been retransmitted.
         System.out.println("Average RTT:" + this.totalRTT / this.RTTNums);
-        System.out.println("Average communication time:" + "<YourVariableHere>");
+        // Average time between sending an original data packet and receiving its ACK, 
+        // ** even if the data packet is retransmitted.
+        System.out.println("Average communication time:" + this.totalCommuncatTime/this.communicatNum);
         System.out.println("==================================================");
 
         // PRINT YOUR OWN STATISTIC HERE TO CHECK THE CORRECTNESS OF YOUR PROGRAM
         System.out.println("\nEXTRA:");
         // EXAMPLE GIVEN BELOW
+        System.out.println("lost packets:"+this.lostPacketNum);
         //System.out.println("Example statistic you want to check e.g. number of ACK packets received by A :" + "<YourVariableHere>");
     }
 
