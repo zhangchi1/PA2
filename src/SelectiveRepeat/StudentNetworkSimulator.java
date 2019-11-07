@@ -109,6 +109,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
 
     private static int maxQueueSize = 50;       // Buffer 50 messages maximum
     private Queue<Message> msgQueue;            // Message buffer queue, FIFO
+    private Queue<Double> senderTimeQueue;      // Time queue of sender
     LinkedList<Packet> senderBuffer;            // In case we need to retransmit
 
     private boolean isFirstPacket = true;       // Remove stopTimer warning
@@ -125,6 +126,13 @@ public class StudentNetworkSimulator extends NetworkSimulator
     private int deliveredPackets = 0;
     private int ackedPackets = 0;
     private int corruptedPackets = 0;
+
+    private boolean isRetransmitted = false;
+    private double totalRTT = 0.0;
+    private int rttCount = 0;
+
+    private double totalCommTime = 0.0;
+    private int commCount = 0;
 
 
     // This is the constructor.  Don't touch!
@@ -175,6 +183,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
                     }
                     startTimer(A, RxmtInterval);
 
+                    senderTimeQueue.add(getTime());
+
                     toLayer3(A, packet);
                     transmittedPackets++;
                 }
@@ -195,28 +205,34 @@ public class StudentNetworkSimulator extends NetworkSimulator
                     System.out.println("A received duplicate ACK, ackNum: " + packet.getAcknum());
                     System.out.println("Retransmitting packet, seqNum: "+ senderBuffer.peek().getSeqnum());
 
+                    isRetransmitted = true;
+
                     stopTimer(A);
+                    startTimer(A, RxmtInterval);
                     toLayer3(A, senderBuffer.peek());
                     retransmittedPackets++;
-                    startTimer(A, RxmtInterval);
                 } else {
                     // Packet fall out of window
                     System.out.println("A received out of window Ack, ackNum: " + packet.getAcknum());
                 }
             } else {
                 // Ack in window
+                double ackTime = getTime();
                 System.out.println("A received an Ack, acknum: " + packet.getAcknum());
                 while (!senderBuffer.isEmpty()) {
                     if (senderBuffer.peek().getSeqnum() == packet.getAcknum()) {
-                        // Packet is acked, remove it from the buffer
-                        Packet deleted = senderBuffer.poll();
-                        //System.out.println("Deleting packet seqNum " + deleted.getSeqnum()+ " from the buffer");
+                        // Packet is acked, remove it from the buffer and exit the loop
+                        updateTimeStatistics(ackTime);
+                        senderTimeQueue.poll();
+                        senderBuffer.poll();
                         sndwndbase = updateSeqNum(sndwndbase);      // Slide the window
                         break;
                     } else {
                         // Received a cumulative Ack, need to slide window more than 1
-                        Packet deleted = senderBuffer.poll();
-                        //System.out.println("Deleting packet seqNum " + deleted.getSeqnum()+ " from the buffer");
+                        // Thus we do not exit loop
+                        updateTimeStatistics(ackTime);
+                        senderTimeQueue.poll();
+                        senderBuffer.poll();
                         sndwndbase = updateSeqNum(sndwndbase);      // Slide the window
                     }
                 }
@@ -237,6 +253,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
             startTimer(A, RxmtInterval);
         } else {
             System.out.println("Time out, A is retransmitting packet seqNum: " + senderBuffer.peek().getSeqnum());
+            isRetransmitted = true;
             toLayer3(A, senderBuffer.peek());
             startTimer(A, RxmtInterval);
             retransmittedPackets++;
@@ -251,6 +268,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
     protected void aInit() {
         System.out.println("Initializing A");
         senderBuffer = new LinkedList<>();
+        senderTimeQueue = new LinkedList<>();
         msgQueue = new LinkedList<>();
     }
 
@@ -335,6 +353,9 @@ public class StudentNetworkSimulator extends NetworkSimulator
                 (double)(transmittedPackets + retransmittedPackets + ackedPackets);
         double corruptRatio = (double)(corruptedPackets) / (double)((transmittedPackets + retransmittedPackets)
         + ackedPackets - (retransmittedPackets - corruptedPackets));
+
+        double avgRTT = totalRTT / rttCount;
+        double avgComm = totalCommTime / commCount;
         // TO PRINT THE STATISTICS, FILL IN THE DETAILS BY PUTTING VARIBALE NAMES. DO NOT CHANGE THE FORMAT OF PRINTED OUTPUT
         System.out.println("\n\n===============STATISTICS=======================");
         System.out.println("Number of original packets transmitted by A:" + transmittedPackets);
@@ -344,8 +365,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
         System.out.println("Number of corrupted packets:" + corruptedPackets);
         System.out.println("Ratio of lost packets:" + lostRatio );
         System.out.println("Ratio of corrupted packets:" + corruptRatio);
-        System.out.println("Average RTT:" + "<YourVariableHere>");
-        System.out.println("Average communication time:" + "<YourVariableHere>");
+        System.out.println("Average RTT:" + avgRTT);
+        System.out.println("Average communication time:" + avgComm);
         System.out.println("==================================================");
 
         // PRINT YOUR OWN STATISTIC HERE TO CHECK THE CORRECTNESS OF YOUR PROGRAM
@@ -402,6 +423,21 @@ public class StudentNetworkSimulator extends NetworkSimulator
             return true;
         }
         return false;
+    }
+
+    protected void updateTimeStatistics(double ackTime) {
+        if (!isRetransmitted) {
+            // The packet is acked without retransmission
+            if (!senderTimeQueue.isEmpty()) {
+                totalRTT += (ackTime - senderTimeQueue.peek());
+                rttCount++;
+            }
+        } else {
+            // The packet is acked after retransmission
+            isRetransmitted = false;
+            totalCommTime += (ackTime - senderTimeQueue.peek());
+            commCount++;
+        }
     }
 
 }
