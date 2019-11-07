@@ -115,10 +115,13 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     private int successfullyReceivedPacketNum = 0;
     private int ackNum = 0;
 
-    // RTTs
+    // RTTs Time
     private int RTTNums = 0;
     private double totalRTT = 0.0;
     private double startRTT = 0.0;
+    // communication Time
+    private double startCommunicatTime = 0.0;
+    private double totalCommuncatTime = 0.0;
 
 
     // This is the constructor.  Don't touch!
@@ -206,6 +209,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
     protected void aOutput(Message message) {
         int bufferSize = this.sequenceBase + this.WindowSize + this.maxBufferSize;
         if (this.nextSequenceNum < bufferSize) {
+            this.startCommunicatTime = this.getTime();
             // add packet into the buffer: A is ack num
             Packet packet = this.createPacket(this.nextSequenceNum, A, message.getData());
             // within the window size
@@ -237,6 +241,7 @@ public class StudentNetworkSimulator extends NetworkSimulator {
 
         if (!this.isCorruptedPacket(packet)) {
             System.out.println("Receiving packet from SIDE B ");
+            this.totalCommuncatTime = this.getTime() - this.startCommunicatTime;
             // update sequence number
             this.sequenceBase = packet.getAcknum() + 1;
             if (this.sequenceBase == this.nextSequenceNum) {
