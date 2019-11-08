@@ -201,24 +201,32 @@ public class StudentNetworkSimulator extends NetworkSimulator
             if (!seqNumInWindow(packet.getAcknum(), sndwndbase)) {
                 // Ack number not in window
                 if (isDuplicateAck(sndwndbase, packet.getAcknum())) {
-                    // Duplicate ACK, retransmit the last unAcked packet
-                    System.out.println("A received duplicate ACK, ackNum: " + packet.getAcknum());
-                    System.out.println("Retransmitting packet, seqNum: "+ senderBuffer.peek().getSeqnum());
+                    if (!senderBuffer.isEmpty()) {
+                        // Duplicate ACK, retransmit the last unAcked packet
+                        System.out.println("A received duplicate ACK, ackNum: " + packet.getAcknum());
+                        System.out.println("Retransmitting packet, seqNum: "+ senderBuffer.peek().getSeqnum());
 
-                    isRetransmitted = true;
 
-                    stopTimer(A);
-                    startTimer(A, RxmtInterval);
-                    toLayer3(A, senderBuffer.peek());
-                    retransmittedPackets++;
+                        isRetransmitted = true;
+
+                        stopTimer(A);
+                        startTimer(A, RxmtInterval);
+                        toLayer3(A, senderBuffer.peek());
+                        retransmittedPackets++;
+                    }
                 } else {
                     // Packet fall out of window
-                    System.out.println("A received out of window Ack, ackNum: " + packet.getAcknum());
+                    //System.out.println("A received out of window Ack, ackNum: " + packet.getAcknum());
                 }
             } else {
                 // Ack in window
                 double ackTime = getTime();
-                System.out.println("A received an Ack, acknum: " + packet.getAcknum());
+
+                if (senderBuffer.peek().getSeqnum() == packet.getAcknum())
+                    System.out.println("A received an Ack, acknum: " + packet.getAcknum());
+                else
+                    System.out.println("A received a cumulative Ack, acknum: " + packet.getAcknum());
+
                 while (!senderBuffer.isEmpty()) {
                     if (senderBuffer.peek().getSeqnum() == packet.getAcknum()) {
                         // Packet is acked, remove it from the buffer and exit the loop
@@ -239,7 +247,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
             }
         } else {
             // Packet is corrupted
-            System.out.println("A received corrupted packet from B, ackNum: " + packet.getAcknum());
+            System.out.println("A received corrupted Ack from B, ackNum: " + packet.getAcknum());
             corruptedPackets++;
         }
     }
@@ -295,7 +303,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
             } else {
                 if (packet.getSeqnum() == rcvwndbase) {
                     // Packet is expected
-                    //System.out.println("B acking, ackNum: " + rcvwndbase);
+                    System.out.println("B received a packet, seqNum: " + packet.getSeqnum());
                     ackedPackets++;
 
                     rcvwndbase = updateSeqNum(rcvwndbase);
@@ -306,7 +314,7 @@ public class StudentNetworkSimulator extends NetworkSimulator
                     //Check buffer for subsequent received packets
                     while (receiverBuffer[rcvwndbase % WindowSize] != null) {
                         Packet oooPkt = receiverBuffer[rcvwndbase % WindowSize];
-                        //System.out.println("B acked a buffered packet, seqNum: " + oooPkt.getSeqnum());
+                        System.out.println("B acked a buffered packet, seqNum: " + oooPkt.getSeqnum());
                         ackedPackets++;
 
                         toLayer5(oooPkt.getPayload());
@@ -332,8 +340,12 @@ public class StudentNetworkSimulator extends NetworkSimulator
                 }
             }
         } else {
-            // Packet is corrupted, wait for A to time out and retransmit
-            System.out.println("B received corrputed packet, seqNum: " + packet.getSeqnum());
+            // Packet is corrupted
+            // Send a duplicate Ack to A
+            System.out.println("B received corrupted packet, seqNum: " + packet.getSeqnum());
+            Packet ack = new Packet(getPreviousSeqNum(rcvwndbase), getPreviousSeqNum(rcvwndbase), -1, "");
+            ack.setChecksum(checksum(ack));
+            toLayer3(B, ack);
             corruptedPackets++;
         }
     }
@@ -371,6 +383,8 @@ public class StudentNetworkSimulator extends NetworkSimulator
 
         // PRINT YOUR OWN STATISTIC HERE TO CHECK THE CORRECTNESS OF YOUR PROGRAM
         System.out.println("\nEXTRA:");
+        System.out.println("Total communication time:" + totalCommTime);
+        System.out.println("Total RTT:" + totalRTT);
         // EXAMPLE GIVEN BELOW
         //System.out.println("Example statistic you want to check e.g. number of ACK packets received by A :" + "<YourVariableHere>");
     }
